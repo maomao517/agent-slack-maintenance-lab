@@ -13,3 +13,5 @@ data/raw/
 data/models/
 data/cache/
 
+envs/
+artifacts/

@@ -7,6 +7,7 @@ from pathlib import Path
 from .generator import generate_experiment
 from .models import ExperimentSpec, PolicyKind
 from .simulator import Simulator
+from .trace_conversion import convert_trace_file
 
 
 def _load_spec(path: Path) -> ExperimentSpec:
@@ -70,6 +71,22 @@ def _generate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _convert_trace(args: argparse.Namespace) -> int:
+    spec = convert_trace_file(
+        args.input,
+        arm=args.arm,
+        maintenance_ms=args.maintenance_ms,
+        tick_ms=args.tick_ms,
+    )
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(
+        json.dumps(spec, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    print(f"Wrote {args.output}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="slackmaint")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -88,6 +105,16 @@ def build_parser() -> argparse.ArgumentParser:
     generate_parser.add_argument("--workflows", type=int, default=8)
     generate_parser.add_argument("--turns", type=int, default=4)
     generate_parser.set_defaults(handler=_generate)
+
+    trace_parser = subparsers.add_parser(
+        "convert-trace", help="convert traced LLM calls into a simulator config"
+    )
+    trace_parser.add_argument("--input", type=Path, required=True)
+    trace_parser.add_argument("--output", type=Path, required=True)
+    trace_parser.add_argument("--arm", default="Direct")
+    trace_parser.add_argument("--maintenance-ms", type=int, required=True)
+    trace_parser.add_argument("--tick-ms", type=int, default=1)
+    trace_parser.set_defaults(handler=_convert_trace)
     return parser
 
 
@@ -98,4 +125,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

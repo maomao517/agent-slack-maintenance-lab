@@ -71,9 +71,20 @@ tests/                   单元测试
 docs/                    实验方案与 ContextPilot 接入说明
 data/                    trace 和数据说明，不提交大文件
 results/                 本地实验结果，不提交生成文件
+scripts/                 ContextPilot 探针与真实 Agent trace 采集工具
+third_party/             固定 commit 的官方 baseline submodule
 ```
+
+克隆完整 baseline：
+
+```bash
+git clone --recurse-submodules \
+  https://github.com/maomao517/agent-slack-maintenance-lab.git
+```
+
+8xV100 服务器上的完整复现与 trace 采集步骤见
+[docs/GPU_REPRODUCTION.md](docs/GPU_REPRODUCTION.md)。
 
 ## 当前边界
 
 当前模拟器只执行已经切分成时间片的可抢占维护任务。真实 ContextPilot 接入尚未实现；必须先完成 motivation 实验，再根据结果实现局部重建和原子快照提交。
-
