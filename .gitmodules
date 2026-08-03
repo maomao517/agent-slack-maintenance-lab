@@ -1,0 +1,6 @@
+[submodule "third_party/ContextPilot"]
+	path = third_party/ContextPilot
+	url = https://github.com/EfficientContext/ContextPilot.git
+[submodule "third_party/ClawTasks"]
+	path = third_party/ClawTasks
+	url = https://github.com/EfficientContext/ClawTasks.git
