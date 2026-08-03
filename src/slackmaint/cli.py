@@ -1,0 +1,101 @@
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+from .generator import generate_experiment
+from .models import ExperimentSpec, PolicyKind
+from .simulator import Simulator
+
+
+def _load_spec(path: Path) -> ExperimentSpec:
+    return ExperimentSpec.from_dict(json.loads(path.read_text(encoding="utf-8")))
+
+
+def _parse_policies(value: str) -> list[PolicyKind]:
+    if value == "all":
+        return list(PolicyKind)
+    return [PolicyKind(item.strip()) for item in value.split(",") if item.strip()]
+
+
+def _print_results(results: list[dict[str, object]]) -> None:
+    headers = (
+        "policy",
+        "average_jct_ms",
+        "p95_jct_ms",
+        "freshness_violations",
+        "freshness_block_ms",
+        "maintenance_overlap_ratio",
+        "maintenance_backlog_ms",
+    )
+    print(" | ".join(headers))
+    print("-" * 112)
+    for result in results:
+        values = []
+        for header in headers:
+            value = result[header]
+            if isinstance(value, float):
+                values.append(f"{value:.3f}")
+            else:
+                values.append(str(value))
+        print(" | ".join(values))
+
+
+def _run(args: argparse.Namespace) -> int:
+    spec = _load_spec(args.config)
+    results = [
+        Simulator(spec, policy).run().to_dict()
+        for policy in _parse_policies(args.policies)
+    ]
+    _print_results(results)
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(
+            json.dumps(results, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        print(f"\nWrote {args.output}")
+    return 0
+
+
+def _generate(args: argparse.Namespace) -> int:
+    config = generate_experiment(args.seed, args.workflows, args.turns)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(
+        json.dumps(config, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    print(f"Wrote {args.output}")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="slackmaint")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    run_parser = subparsers.add_parser("run", help="run a trace experiment")
+    run_parser.add_argument("--config", type=Path, required=True)
+    run_parser.add_argument("--policies", default="all")
+    run_parser.add_argument("--output", type=Path)
+    run_parser.set_defaults(handler=_run)
+
+    generate_parser = subparsers.add_parser(
+        "generate", help="generate a deterministic synthetic trace"
+    )
+    generate_parser.add_argument("--output", type=Path, required=True)
+    generate_parser.add_argument("--seed", type=int, default=42)
+    generate_parser.add_argument("--workflows", type=int, default=8)
+    generate_parser.add_argument("--turns", type=int, default=4)
+    generate_parser.set_defaults(handler=_generate)
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    return args.handler(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+

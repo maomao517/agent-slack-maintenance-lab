@@ -1,0 +1,52 @@
+{
+  "name": "single-resource-smoke",
+  "tick_ms": 10,
+  "periodic_interval_ms": 200,
+  "periodic_budget_ms": 50,
+  "workflows": [
+    {
+      "workflow_id": "workflow-a",
+      "tenant_id": "tenant-0",
+      "start_ms": 0,
+      "model_segments_ms": [100, 100, 100],
+      "tool_waits_ms": [500, 300]
+    },
+    {
+      "workflow_id": "workflow-b",
+      "tenant_id": "tenant-1",
+      "start_ms": 50,
+      "model_segments_ms": [120, 120],
+      "tool_waits_ms": [400]
+    }
+  ],
+  "maintenance_tasks": [
+    {
+      "task_id": "update-a-1",
+      "owner_workflow_id": "workflow-a",
+      "task_type": "index_update",
+      "work_ms": 220,
+      "trigger_after_segment": 0,
+      "required_before_segment": 1,
+      "version": 1
+    },
+    {
+      "task_id": "compact-a-2",
+      "owner_workflow_id": "workflow-a",
+      "task_type": "compact",
+      "work_ms": 180,
+      "trigger_after_segment": 1,
+      "required_before_segment": 2,
+      "version": 2
+    },
+    {
+      "task_id": "rebuild-b-1",
+      "owner_workflow_id": "workflow-b",
+      "task_type": "local_rebuild",
+      "work_ms": 260,
+      "trigger_after_segment": 0,
+      "required_before_segment": 1,
+      "version": 1
+    }
+  ]
+}
+
