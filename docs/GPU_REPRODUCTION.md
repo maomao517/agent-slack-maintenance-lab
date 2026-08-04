@@ -24,69 +24,63 @@ ContextPilot  1fa0a143fdeda344585666648ab2b30cb7fea77f
 ClawTasks     c44214abe151b73fd770757deca042a0a02566ca
 ```
 
-## 2. 环境
+## 2. 纯用户态环境
 
-先安装系统工具、uv 和 OpenClaw：
+所有运行时文件都放在仓库内部。不要使用 `sudo`、系统 Python 或全局 npm 安装。
 
 ```bash
-sudo apt-get update
-sudo apt-get install -y git curl jq tmux build-essential
-
-curl -LsSf https://astral.sh/uv/install.sh | sh
-source ~/.bashrc
-
-curl -fsSL https://openclaw.ai/install.sh | bash
-openclaw onboard --install-daemon
-openclaw --version
+source scripts/activate_experiment.sh
 ```
 
-OpenClaw 官方要求 Node.js 22.22.3+、24.15+ 或 25.9+；官方安装脚本会在需要时准备受支持的 Node.js。
+后续每个新终端都先执行 `cd agent-slack-maintenance-lab` 和 `source scripts/activate_experiment.sh`。
 
-建议拆成两个环境：
+要求机器已经提供 `git`、`curl`、`python3.11`、NVIDIA driver 和基本编译工具。它们缺失时应联系机器管理员，不要自行修改系统环境。
+
+创建两个可整体删除的 Python venv：
 
 ```bash
-uv venv envs/control --python 3.11
-uv pip install --python envs/control/bin/python -e . aiohttp
+python3.11 -m venv envs/control
+envs/control/bin/python -m pip install --upgrade pip
+envs/control/bin/pip install -e . aiohttp
 
-uv venv envs/contextpilot --python 3.11
-uv pip install --python envs/contextpilot/bin/python \
+python3.11 -m venv envs/contextpilot
+envs/contextpilot/bin/python -m pip install --upgrade pip
+envs/contextpilot/bin/pip install \
   -e third_party/ContextPilot "sglang==0.5.9"
-
-# Editable install 不会自动安装 SGLang/vLLM 启动 hook。
 envs/contextpilot/bin/python -m contextpilot.install_hook
 ```
 
-配置 OpenClaw 的 `sglang` provider，先备份原配置：
+OpenClaw 官方要求 Node.js 22.22.3+。将 Node 和 OpenClaw 都安装到 `.runtime/`：
 
 ```bash
-cp ~/.openclaw/openclaw.json ~/.openclaw/openclaw.json.before-contextpilot
+NODE_VERSION=v22.22.3
+case "$(uname -m)" in
+  x86_64) NODE_ARCH=x64 ;;
+  aarch64|arm64) NODE_ARCH=arm64 ;;
+  *) echo "Unsupported architecture: $(uname -m)"; exit 1 ;;
+esac
 
-MODEL_ID="Qwen/Qwen3-4B-Instruct-2507"
-jq --arg model "$MODEL_ID" '
-  .agents = (.agents // {}) |
-  .agents.defaults = (.agents.defaults // {}) |
-  .agents.defaults.model = {"primary": ("sglang/" + $model)} |
-  .models = (.models // {}) |
-  .models.mode = "merge" |
-  .models.providers = (.models.providers // {}) |
-  .models.providers.sglang = {
-    "baseUrl": "http://127.0.0.1:30100/v1",
-    "apiKey": "EMPTY",
-    "api": "openai-completions",
-    "headers": {"X-ContextPilot-Scope": "all"},
-    "models": [{
-      "id": $model,
-      "name": "Qwen3 4B via SGLang",
-      "reasoning": false,
-      "input": ["text"],
-      "contextWindow": 65536,
-      "maxTokens": 2048
-    }]
-  }
-' ~/.openclaw/openclaw.json > /tmp/openclaw-contextpilot.json
-mv /tmp/openclaw-contextpilot.json ~/.openclaw/openclaw.json
+curl -fL "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" \
+  -o .runtime/node.tar.xz
+tar -xJf .runtime/node.tar.xz -C .runtime
+ln -sfn "node-${NODE_VERSION}-linux-${NODE_ARCH}" .runtime/node
+export PATH="$EXP_ROOT/.runtime/node/bin:$PATH"
 
-openclaw models list
+npm_config_cache="$EXP_ROOT/.runtime/npm-cache" \
+  npm install --prefix .runtime/openclaw openclaw@latest
+export OPENCLAW_BIN="$EXP_ROOT/.runtime/openclaw/node_modules/.bin/openclaw"
+HOME="$EXP_HOME" "$OPENCLAW_BIN" onboard
+```
+
+配置独立 OpenClaw home 中的 `sglang` provider：
+
+```bash
+envs/control/bin/python scripts/configure_openclaw.py \
+  --config "$EXP_HOME/.openclaw/openclaw.json" \
+  --base-url http://127.0.0.1:30100/v1 \
+  --context-window 65536
+
+HOME="$EXP_HOME" "$OPENCLAW_BIN" models list
 ```
 
 模型只做推理，不训练。
@@ -138,7 +132,7 @@ CUDA_VISIBLE_DEVICES=0,1 envs/contextpilot/bin/python -m sglang.launch_server \
 健康检查：
 
 ```bash
-curl -sS http://127.0.0.1:30002/v1/models | jq .
+curl -sS http://127.0.0.1:30002/v1/models
 ```
 
 先完成一个 scenario，再扩到 131072 context。不要一开始并行占满 8 张卡，否则无法区分调度收益与跨任务资源干扰。
@@ -157,9 +151,11 @@ envs/control/bin/python scripts/openai_trace_proxy.py \
 终端 B 执行一个 ClawTasks scenario：
 
 ```bash
-envs/control/bin/python scripts/run_openclaw_trace.py \
+HOME="$EXP_HOME" envs/control/bin/python scripts/run_openclaw_trace.py \
   --clawtasks-root third_party/ClawTasks \
-  --openclaw-command openclaw \
+  --openclaw-command "$OPENCLAW_BIN" \
+  --config "$EXP_HOME/.openclaw/openclaw.json" \
+  --workspace "$EXP_HOME/.openclaw/workspace/contracts" \
   --arm Direct \
   --scenario s01_commercial_terms \
   --base-url http://127.0.0.1:30100/v1 \
@@ -208,9 +204,11 @@ envs/control/bin/python scripts/openai_trace_proxy.py \
 再运行相同 scenario：
 
 ```bash
-envs/control/bin/python scripts/run_openclaw_trace.py \
+HOME="$EXP_HOME" envs/control/bin/python scripts/run_openclaw_trace.py \
   --clawtasks-root third_party/ClawTasks \
-  --openclaw-command openclaw \
+  --openclaw-command "$OPENCLAW_BIN" \
+  --config "$EXP_HOME/.openclaw/openclaw.json" \
+  --workspace "$EXP_HOME/.openclaw/workspace/contracts" \
   --arm CP \
   --scenario s01_commercial_terms \
   --base-url http://127.0.0.1:30100/v1 \
@@ -250,3 +248,7 @@ envs/control/bin/slackmaint run \
 - freshness violation 保持为 0。
 
 如果增量更新和删除始终只有亚毫秒级，fresh rebuild 也不进入关键路径，则不应继续把“索引维护调度”作为主创新点，应转向多租户 context index、跨模态 identity/version 或缓存一致性问题。
+
+## 9. 清理
+
+确认 `artifacts/` 已复制到其他位置，停止 SGLang、ContextPilot 和 trace proxy，然后删除整个仓库目录即可。所有新增的 Python、Node、OpenClaw 配置、模型缓存和实验文件都位于该目录中。
