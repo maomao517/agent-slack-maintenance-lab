@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import shlex
 import shutil
 import subprocess
 import time
@@ -66,7 +67,16 @@ def parse_agent_output(stdout: str) -> dict[str, object]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run ClawTasks through a trace proxy")
     parser.add_argument("--clawtasks-root", type=Path, required=True)
-    parser.add_argument("--openclaw", type=Path, required=True)
+    parser.add_argument(
+        "--openclaw-command",
+        default="openclaw",
+        help="installed OpenClaw command, optionally including arguments",
+    )
+    parser.add_argument(
+        "--openclaw",
+        type=Path,
+        help="legacy source checkout entry point such as ~/openclaw/openclaw.mjs",
+    )
     parser.add_argument("--node", default="node")
     parser.add_argument("--config", type=Path, default=Path("~/.openclaw/openclaw.json"))
     parser.add_argument("--workspace", type=Path, default=Path("~/.openclaw/workspace/contracts"))
@@ -83,7 +93,13 @@ def main() -> None:
 
     args.config = args.config.expanduser()
     args.workspace = args.workspace.expanduser()
-    args.openclaw = args.openclaw.expanduser()
+    if args.openclaw is not None:
+        args.openclaw = args.openclaw.expanduser()
+        openclaw_prefix = [args.node, str(args.openclaw)]
+    else:
+        openclaw_prefix = shlex.split(args.openclaw_command)
+    if not openclaw_prefix:
+        raise SystemExit("OpenClaw command cannot be empty")
     tasks = load_tasks(args.clawtasks_root, args.category, set(args.scenario))
     if not tasks:
         raise SystemExit("no matching ClawTasks scenarios")
@@ -116,8 +132,7 @@ def main() -> None:
                     start_ns = time.time_ns()
                     completed = subprocess.run(
                         [
-                            args.node,
-                            str(args.openclaw),
+                            *openclaw_prefix,
                             "agent",
                             "--local",
                             "--session-id",
