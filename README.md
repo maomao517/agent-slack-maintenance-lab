@@ -6,6 +6,8 @@
 
 当前版本提供一个不依赖 GPU 和模型的离散事件回放器。它先验证研究假设，再逐步接入 ContextPilot 和真实推理后端，避免在 motivation 尚未成立时投入大量系统改造。
 
+仓库还包含一个独立的多模态状态租约前置实验，用于比较固定 KV TTL、Encoder LRU 和 KV/Encoder 分级租约。该实验同样只依赖 Python 标准库，详见 [docs/LEASE_EXPERIMENT.md](docs/LEASE_EXPERIMENT.md)。
+
 ## 当前能力
 
 - 回放多工作流的模型阶段与工具等待阶段；
@@ -37,6 +39,15 @@ uv pip install -e .
 
 python -m unittest discover -s tests -v
 slackmaint run --config configs/smoke.json --policies all --output results/smoke.json
+```
+
+运行多模态状态租约前置实验：
+
+```bash
+slackmaint leasebench \
+  --config configs/lease_smoke.json \
+  --policies all \
+  --output results/lease-smoke.json
 ```
 
 生成新的受控 trace：

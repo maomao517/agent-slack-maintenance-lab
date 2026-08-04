@@ -2,9 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import replace
 from pathlib import Path
 
 from .generator import generate_experiment
+from .lease_simulator import (
+    LeaseExperimentSpec,
+    LeasePolicy,
+    LeaseSimulator,
+)
 from .models import ExperimentSpec, PolicyKind
 from .simulator import Simulator
 from .trace_conversion import convert_trace_file
@@ -87,6 +93,57 @@ def _convert_trace(args: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_lease_policies(value: str) -> list[LeasePolicy]:
+    if value == "all":
+        return list(LeasePolicy)
+    return [LeasePolicy(item.strip()) for item in value.split(",") if item.strip()]
+
+
+def _leasebench(args: argparse.Namespace) -> int:
+    spec = LeaseExperimentSpec.from_dict(
+        json.loads(args.config.read_text(encoding="utf-8"))
+    )
+    if args.capacity_mb is not None:
+        spec = replace(spec, retention_capacity_mb=args.capacity_mb)
+    if args.fixed_kv_ttl_ms is not None:
+        spec = replace(spec, fixed_kv_ttl_ms=args.fixed_kv_ttl_ms)
+    results = [
+        LeaseSimulator(spec, policy).run().to_dict()
+        for policy in _parse_lease_policies(args.policies)
+    ]
+    headers = (
+        "policy",
+        "average_jct_ms",
+        "p95_jct_ms",
+        "total_recompute_ms",
+        "kv_hits",
+        "encoder_hits",
+        "cache_misses",
+        "demotions",
+        "forced_evictions",
+        "peak_retained_mb",
+    )
+    print(" | ".join(headers))
+    print("-" * 150)
+    for result in results:
+        print(
+            " | ".join(
+                f"{result[header]:.3f}"
+                if isinstance(result[header], float)
+                else str(result[header])
+                for header in headers
+            )
+        )
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(
+            json.dumps(results, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        print(f"\nWrote {args.output}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="slackmaint")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -115,6 +172,17 @@ def build_parser() -> argparse.ArgumentParser:
     trace_parser.add_argument("--maintenance-ms", type=int, required=True)
     trace_parser.add_argument("--tick-ms", type=int, default=1)
     trace_parser.set_defaults(handler=_convert_trace)
+
+    lease_parser = subparsers.add_parser(
+        "leasebench",
+        help="compare KV and multimodal encoder state lease policies",
+    )
+    lease_parser.add_argument("--config", type=Path, required=True)
+    lease_parser.add_argument("--policies", default="all")
+    lease_parser.add_argument("--output", type=Path)
+    lease_parser.add_argument("--capacity-mb", type=int)
+    lease_parser.add_argument("--fixed-kv-ttl-ms", type=int)
+    lease_parser.set_defaults(handler=_leasebench)
     return parser
 
 

@@ -1,0 +1,54 @@
+{
+  "name": "multimodal-agent-lease-smoke",
+  "tick_ms": 10,
+  "retention_capacity_mb": 7200,
+  "fixed_kv_ttl_ms": 2000,
+  "encoder_ttl_ms": 10000,
+  "max_time_ms": 120000,
+  "workflows": [
+    {
+      "workflow_id": "doc-agent-0",
+      "start_ms": 0,
+      "model_segments_ms": [420, 360, 380, 320],
+      "tool_waits_ms": [450, 3600, 700],
+      "expected_tool_waits_ms": [500, 900, 650],
+      "kv_size_mb": 3200,
+      "encoder_size_mb": 480,
+      "prefill_ms": 230,
+      "encoder_ms": 170
+    },
+    {
+      "workflow_id": "doc-agent-1",
+      "start_ms": 200,
+      "model_segments_ms": [390, 340, 330, 310],
+      "tool_waits_ms": [800, 1100, 5200],
+      "expected_tool_waits_ms": [700, 1000, 1200],
+      "kv_size_mb": 3600,
+      "encoder_size_mb": 520,
+      "prefill_ms": 260,
+      "encoder_ms": 190
+    },
+    {
+      "workflow_id": "doc-agent-2",
+      "start_ms": 500,
+      "model_segments_ms": [450, 380, 350, 300],
+      "tool_waits_ms": [250, 1800, 900],
+      "expected_tool_waits_ms": [300, 1600, 850],
+      "kv_size_mb": 4100,
+      "encoder_size_mb": 600,
+      "prefill_ms": 300,
+      "encoder_ms": 220
+    },
+    {
+      "workflow_id": "doc-agent-3",
+      "start_ms": 850,
+      "model_segments_ms": [410, 350, 360, 290],
+      "tool_waits_ms": [1500, 420, 2400],
+      "expected_tool_waits_ms": [1300, 500, 1400],
+      "kv_size_mb": 3400,
+      "encoder_size_mb": 500,
+      "prefill_ms": 250,
+      "encoder_ms": 180
+    }
+  ]
+}
