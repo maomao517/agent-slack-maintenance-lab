@@ -84,6 +84,8 @@ git clone --recurse-submodules \
 
 8xV100 服务器上的完整复现与 trace 采集步骤见
 [docs/GPU_REPRODUCTION.md](docs/GPU_REPRODUCTION.md)。
+公司环境无法安装 OpenClaw 时，使用纯 Python 工具 Agent 路线：
+[docs/PYTHON_AGENT_REPRODUCTION.md](docs/PYTHON_AGENT_REPRODUCTION.md)。
 
 ## 当前边界
 

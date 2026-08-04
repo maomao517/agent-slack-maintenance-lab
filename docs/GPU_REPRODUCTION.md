@@ -1,5 +1,7 @@
 # 8xV100 复现实验与真实 Agent Trace
 
+> 公司机器不能安装 OpenClaw 时，不需要执行本文的 Node/OpenClaw 部分，直接使用 [PYTHON_AGENT_REPRODUCTION.md](PYTHON_AGENT_REPRODUCTION.md)。
+
 ## 目标
 
 这一阶段分别测量两个事实，而不是直接宣称 idle-aware 调度有效：
@@ -41,7 +43,7 @@ source scripts/activate_experiment.sh
 ```bash
 python3.11 -m venv envs/control
 envs/control/bin/python -m pip install --upgrade pip
-envs/control/bin/pip install -e . aiohttp
+envs/control/bin/pip install -e . aiohttp openai
 
 python3.11 -m venv envs/contextpilot
 envs/contextpilot/bin/python -m pip install --upgrade pip
