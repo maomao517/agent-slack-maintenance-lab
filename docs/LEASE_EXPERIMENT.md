@@ -97,6 +97,21 @@ encoder_ms              Vision Encoder 计算时间
 
 在尚未接入 VLM 前，不应把示例配置产生的加速数字写入开题报告；它只用于验证模拟器和实验逻辑。
 
+## 本机完整扫描
+
+不需要 GPU 或外网即可运行 78 个受控场景：
+
+```bash
+envs/control/bin/slackmaint leasesweep \
+  --config configs/lease_smoke.json \
+  --output-dir artifacts/results/lease-sweep
+```
+
+扫描容量与 KV TTL 的二维交互，并分别改变工具等待长尾、等待时间预测误差、Encoder/KV 大小比、Encoder 计算成本和并发度。原始策略数据写入 `metrics.json`，派生比较写入 `comparisons.csv`，摘要写入 `summary.md`。
+
+当前模拟结果不能替代真实 VLM 测量。下一阶段的最小真实实验方案见
+[COMPANY_REAL_PROFILE_PLAN.md](COMPANY_REAL_PROFILE_PLAN.md)。
+
 ## 结果判断
 
 重点比较：

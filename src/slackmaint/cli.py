@@ -11,6 +11,7 @@ from .lease_simulator import (
     LeasePolicy,
     LeaseSimulator,
 )
+from .lease_sweep import run_sweep_to_directory
 from .models import ExperimentSpec, PolicyKind
 from .simulator import Simulator
 from .trace_conversion import convert_trace_file
@@ -144,6 +145,16 @@ def _leasebench(args: argparse.Namespace) -> int:
     return 0
 
 
+def _leasesweep(args: argparse.Namespace) -> int:
+    summary = run_sweep_to_directory(args.config, args.output_dir)
+    print(
+        f"Completed {summary['case_count']} cases and "
+        f"{summary['metric_row_count']} policy runs"
+    )
+    print(f"Wrote {summary['output_dir']}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="slackmaint")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -183,6 +194,14 @@ def build_parser() -> argparse.ArgumentParser:
     lease_parser.add_argument("--capacity-mb", type=int)
     lease_parser.add_argument("--fixed-kv-ttl-ms", type=int)
     lease_parser.set_defaults(handler=_leasebench)
+
+    sweep_parser = subparsers.add_parser(
+        "leasesweep",
+        help="run the reproducible multimodal state lease parameter sweep",
+    )
+    sweep_parser.add_argument("--config", type=Path, required=True)
+    sweep_parser.add_argument("--output-dir", type=Path, required=True)
+    sweep_parser.set_defaults(handler=_leasesweep)
     return parser
 
 

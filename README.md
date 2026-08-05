@@ -50,6 +50,18 @@ slackmaint leasebench \
   --output results/lease-smoke.json
 ```
 
+运行完整的本机参数扫描（78 个场景、390 次策略模拟）：
+
+```bash
+slackmaint leasesweep \
+  --config configs/lease_smoke.json \
+  --output-dir artifacts/results/lease-sweep
+```
+
+扫描结果包括 `metrics.json`、`comparisons.csv` 和 `summary.md`。合成扫描结果及公司机器真实测量方案见
+[docs/LEASE_SWEEP_RESULT.md](docs/LEASE_SWEEP_RESULT.md) 和
+[docs/COMPANY_REAL_PROFILE_PLAN.md](docs/COMPANY_REAL_PROFILE_PLAN.md)。
+
 生成新的受控 trace：
 
 ```bash
