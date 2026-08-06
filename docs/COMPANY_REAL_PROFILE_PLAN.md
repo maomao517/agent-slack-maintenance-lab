@@ -89,7 +89,31 @@ V100 显存容量
 
 如果当前本地模型是纯文本模型，不能用它证明多模态 Encoder 状态的存在；可以先完成文本 KV 测量，但必须把结果标记为“非多模态替代实验”。
 
-注意：当前仓库已经实现的是 trace 回放器和参数扫描器，尚未实现针对某个 VLM 后端的自动 Encoder/KV profiler。因此，本文档不是“下载模型后执行一条命令即可完成真实实验”；需要根据现有后端日志或 API，先记录 Phase 3 中的真实字段，再生成 `configs/real-vlm-profile.json`。
+仓库提供 `scripts/profile_local_vlm.py`，用于在单张 CUDA GPU 上离线测量 Hugging Face VLM 的视觉 Encoder、prefill、Encoder 输出、KV Cache 和峰值显存。该脚本是前置 profile 工具，不实现跨轮 KV 保留，也不替代后续真实 Agent trace。
+
+先使用一张非敏感本地图像做 1 次 warm-up 和 3 次测量，验证模型前向链路：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 envs/control/bin/python scripts/profile_local_vlm.py \
+  --model-dir "$MODEL_DIR" \
+  --image "$IMAGE_PATH" \
+  --warmup 1 \
+  --repeats 3 \
+  --output artifacts/traces/qwen3-vl-smoke.jsonl
+```
+
+成功后再运行正式 profile：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 envs/control/bin/python scripts/profile_local_vlm.py \
+  --model-dir "$MODEL_DIR" \
+  --image "$IMAGE_PATH" \
+  --warmup 5 \
+  --repeats 20 \
+  --output artifacts/traces/qwen3-vl-profile.jsonl
+```
+
+脚本固定使用 FP16 和 eager attention，适合 V100。`prefill_ms_estimate` 是完整前向耗时减去视觉模块耗时得到的近似值；`encoder_size_mb` 是视觉模块返回的最大 tensor 大小；两项都必须在报告中注明测量口径。
 
 ## Phase 2：构造受控 Agent trace
 
