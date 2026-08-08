@@ -12,7 +12,7 @@
 
 在应用级复用方面，Prompt Cache 将系统提示词、模板和文档等可重复输入组织为具有明确边界的 prompt module，并缓存其 attention state，以减少重复 prefill[3]。SGLang 则进一步面向结构化语言模型程序设计了 RadixAttention，通过 Radix Tree 管理共享前缀，并将缓存复用与程序中的生成、并行和控制流结合起来[2]。这些研究说明，LLM 推理中的复用对象可以从单个请求扩展到模块、前缀和结构化程序，但其基本假设仍然是：可复用上下文的生命周期较为稳定，缓存对象主要是文本 token 产生的 KV 状态。
 
-针对检索增强生成中的非连续上下文，CacheBlend 研究了来自不同知识块的 KV Cache 融合问题，通过选择性重算部分 token 来修正不同缓存片段直接拼接造成的位置和依赖误差[4]。Cache-Craft 和 LMCache 等工作则进一步探索了 chunk 粒度缓存、跨请求复用以及 GPU、CPU 和本地存储之间的状态迁移[18][20]。Mooncake 将 KV Cache 作为分布式推理系统中的核心资源，研究了 KV 状态在计算节点和存储池之间的组织与调度[5]。这些工作推动了推理状态从单机显存对象向跨层级、跨请求的系统资源演进。
+针对检索增强生成中的非连续上下文，CacheBlend 研究了来自不同知识块的 KV Cache 融合问题，通过选择性重算部分 token 来修正不同缓存片段直接拼接造成的位置和依赖误差[4]。Cache-Craft 进一步讨论了 RAG 场景中知识块缓存的识别、部分重算、存储和淘汰问题[17]。Mooncake 则将 KV Cache 作为分布式推理系统中的核心资源，研究了 KV 状态在计算节点和存储池之间的组织与调度[5]。这些工作推动了推理状态从单机显存对象向跨层级、跨请求的系统资源演进。LMCache 是与上述方向相关的开源系统实现，但代码仓库不能替代论文引用，本文不将其作为独立论文编号。
 
 近期研究开始关注 Agent 和长上下文应用中的上下文复用。ContextPilot 通过上下文索引、上下文对齐和去重，识别不同 LLM 交互之间的重叠上下文，以提高 KV Cache 复用率[6]。Continuum 则更加关注 Agent 因工具调用而暂停时的状态保留和恢复问题[7]。这类研究直接说明，Agent 工作流中的一次模型调用并不一定意味着任务结束，暂停任务此前产生的推理状态可能在工具返回后再次使用。
 
@@ -38,7 +38,7 @@
 
 在工作流记忆方面，Agent Workflow Memory 从历史轨迹中归纳可重复的任务流程，并在后续 Agent 执行时选择性提供这些流程[10]。该工作关注的是行为程序和任务经验的复用，说明 Agent 的复用对象已经从文本前缀扩展到更高层次的工作流结构。AgenticCache 则在具身 Agent 中缓存常见的计划转移，并通过后台 Cache Updater 异步验证和更新缓存计划[11]。这些研究体现了 Agent 系统利用后台执行和异步更新降低前台延迟的趋势，但其缓存对象主要是计划或动作，不是视觉 Encoder 和模型 KV 状态。
 
-在长上下文和工具驱动 Agent 方面，ContextPilot 通过上下文索引、对齐和去重优化输入内容，Continuum 则研究暂停 Agent 的推理状态保存和恢复[6][7]。它们已经涉及 Agent 工作流中的上下文复用和暂停状态，但仍存在进一步研究空间：第一，缓存对象主要集中在完整上下文或 KV 状态，未充分利用视觉 Encoder 作为较小的中间状态层；第二，固定 TTL 或静态缓存策略难以适应 OCR、检索和网页工具不同的返回时间；第三，单个工作流的状态保留策略与多租户并发调度通常被分开处理。
+在长上下文和工具驱动 Agent 方面，ContextPilot 通过上下文索引、对齐和去重优化输入内容，Continuum 则研究暂停 Agent 的推理状态保存和恢复，并根据恢复成本与潜在排队延迟决定 KV 状态的保留 TTL[6][7]。这些工作已经涉及 Agent 工作流中的上下文复用和暂停状态，但仍存在进一步研究空间：第一，ContextPilot 主要围绕上下文块的索引、对齐、去重和 KV 复用展开，Continuum 主要围绕文本 Agent 暂停时的 KV TTL 展开，二者都没有在本文设定的多模态状态层面联合比较完整 KV、视觉 Encoder 输出和完全释放三种恢复路径；第二，Continuum 已经考虑了工具调用持续时间的方差，因此本文不能把“按预计时间设置 TTL”表述为首次提出的机制，较稳妥的切入点是研究多模态状态分层下的预测误差、降级策略和并发影响；第三，单个工作流的状态保留策略与多租户并发调度通常被分开处理，二者在本文中的联合效果仍需实验验证。
 
 因此，Agent 工作流研究已经从“如何让模型完成任务”逐步发展到“如何让系统高效执行任务程序”。但对于多模态 Agent，工作流结构、工具等待时间和异构推理状态之间还缺少统一的资源管理接口。本文拟将工具等待期间的暂停状态作为系统研究对象，重点分析恢复时间、状态大小、重算成本和并发资源竞争之间的关系。
 
@@ -48,7 +48,7 @@
 
 **第一，现有缓存研究通常采用单一状态对象，缺少多模态状态的分层描述。** 现有 KV Cache 系统主要把 token 对应的 KV 作为缓存单元，视觉研究则更多关注视觉表示压缩或检索索引。对于多模态 Agent 的一次暂停状态，至少可以区分完整 KV Cache、视觉 Encoder 输出和完全释放三种状态。它们具有不同的空间开销和重算路径，直接使用单一 LRU 或单一 TTL 可能无法获得最优结果。
 
-**第二，固定 TTL 难以适应 Agent 工具等待时间的异质性和长尾性。** OCR、数据库查询和网页检索具有不同的运行时间分布，同一工具也可能受到网络、负载和数据规模影响。固定 TTL 过短会导致工作流恢复前状态已经被淘汰，固定 TTL 过长又会使暂停任务长期占用显存。进一步地，若使用预计恢复时间设置自适应租约，还必须分析预计时间误差对状态命中率和端到端延迟的影响，不能只在理想的准确预测条件下评价方法。
+**第二，现有时间感知保留机制尚未覆盖多模态状态的分层选择。** OCR、数据库查询和网页检索具有不同的运行时间分布，同一工具也可能受到网络、负载和数据规模影响。Continuum 已经根据恢复成本和潜在排队延迟研究 KV 状态 TTL，并讨论工具调用时长方差；本文拟进一步考察：当完整 KV、视觉 Encoder 输出和完全释放具有不同的恢复成本与占用空间时，如何在预计恢复时间存在误差的情况下选择保留层级。该问题不能由固定 TTL 的单一基线直接解决，需要用真实 profile 和误差敏感性实验验证是否存在可测的收益。
 
 **第三，状态管理和并发调度之间缺少联合目标。** 暂停任务不消耗当前 GPU 计算，但其 KV 或视觉状态可能持续占用显存；如果系统只追求单个任务的恢复速度，可能挤压活跃任务并导致整体 P95 延迟恶化。因此，状态 admission 不仅应考虑再次访问的可能性和重算成本，还应考虑状态大小、当前显存压力、工作流优先级以及多租户公平性。
 
@@ -68,7 +68,7 @@
 
 [4] Jiayi Yao, Hanchen Li, Yuhan Liu, Siddhant Ray, Yihua Cheng, Qizheng Zhang, et al. CacheBlend: Fast Large Language Model Serving for RAG with Cached Knowledge Fusion. In: Proceedings of the 20th European Conference on Computer Systems. 2025
 
-[5] Zhihao Qin, Yile Guo, Yiwen Zhang, et al. Mooncake: A KVCache-centric Disaggregated Architecture for LLM Serving. In: Proceedings of the 23rd USENIX Conference on File and Storage Technologies. 2025
+[5] Ruoyu Qin, Zheming Li, Weiran He, Mingxing Zhang, Yongwei Wu, et al. Mooncake: A KVCache-centric Disaggregated Architecture for LLM Serving. In: Proceedings of the 23rd USENIX Conference on File and Storage Technologies. 2025
 
 [6] Yinsicheng Jiang, Yeqi Huang, Liang Cheng, Cheng Deng, Xuan Sun, Luo Mai. ContextPilot: Fast Long-Context Inference via Context Reuse. In: Proceedings of the 9th Conference on Machine Learning and Systems. 2026
 
@@ -76,7 +76,7 @@
 
 [8] Haowei Zhang, Shudong Yang, Jinlan Fu, See-Kiong Ng, Xipeng Qiu. HERMES: KV Cache as Hierarchical Memory for Efficient Streaming Video Understanding. In: Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics. 2026
 
-[9] Shiyi Cao, et al. Parrot: Efficient Serving of LLM-based Applications with Semantic Variable. In: Proceedings of the 18th USENIX Symposium on Operating Systems Design and Implementation. 2024
+[9] Chaofan Lin, Zhenhua Han, Chengruidong Zhang, Yuqing Yang, Fan Yang, et al. Parrot: Efficient Serving of LLM-based Applications with Semantic Variable. In: Proceedings of the 18th USENIX Symposium on Operating Systems Design and Implementation. 2024
 
 [10] Zora Zhiruo Wang, Jiayuan Mao, Daniel Fried, Graham Neubig. Agent Workflow Memory. In: Proceedings of the 42nd International Conference on Machine Learning. 2025
 
@@ -92,14 +92,6 @@
 
 [16] Yuxuan Yan, Shiqi Jiang, Ting Cao, Yifan Yang, Qianqian Yang, Yuanchao Shu, et al. Ava: Towards Agentic Video Analytics with Vision Language Models. In: Proceedings of the 23rd USENIX Symposium on Networked Systems Design and Implementation. 2026
 
-[17] Zeyu Zhang, Quanyu Dai, Ji-Rong Wen. A Survey on the Memory Mechanism of Large Language Model-based Agents. ACM Transactions on Information Systems, 2024
+[17] Shubham Agarwal, Sai Sundaresan, Subrata Mitra, Debabrata Mahapatra, Archit Gupta, Rounak Sharma, et al. Cache-Craft: Managing Chunk-Caches for Efficient Retrieval-Augmented Generation. arXiv preprint arXiv:2502.15734, 2025
 
-[18] Baolin Li, Yankai Jiang, V. Gadepally, Devesh Tiwari. LLM Inference Serving: Survey of Recent Advances and Opportunities. In: IEEE High Performance Extreme Computing Conference. 2024
-
-[19] Shukang Yin, Chaoyou Fu, Sirui Zhao, Ke Li, Xing Sun, Tong Xu, et al. A Survey on Multimodal Large Language Models. National Science Review, 2023
-
-[20] Taicheng Guo, Xiuying Chen, et al. Large Language Model based Multi-Agents: A Survey of Progress and Challenges. In: Proceedings of the International Joint Conference on Artificial Intelligence. 2024
-
-[21] Shangheng Du, Jiabao Zhao, Liang He, et al. A Survey on the Optimization of Large Language Model-based Agents. ACM Computing Surveys, 2025
-
-[22] J. Pan, Guoliang Li. A Survey of LLM Inference Systems. arXiv preprint arXiv:2506.21901, 2025
+> 说明：前一版中有 6 篇检索得到的综述候选，但当前没有纳入正文，也没有完成本地全文核验，因此从正式参考文献表移出。它们的待核验状态见 `OPENING_REPORT_CHINESE_SOURCES.md` 及论文普查目录。
