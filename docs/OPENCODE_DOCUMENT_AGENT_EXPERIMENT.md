@@ -67,6 +67,68 @@ OpenCode负责规划、工具选择和工作流推进；Qwen3-VL负责文档页�
 
 只要第1、3和4项成立，就可以使用Shell适配方案，不需要等待MCP接入。
 
+### 4.1 OpenCode 1.18.12实测结果
+
+目标环境已经完成接口核验，结果如下：
+
+|能力|实测结果|实验采用方式|
+|---|---|---|
+|执行仓库内Python脚本|支持|由OpenCode通过Shell调用`doc_tool.py`|
+|任务与会话管理|支持|使用`--title`标记任务，从JSON事件或导出结果登记真实`session_id`|
+|环境变量注入|支持|批处理入口注入`RUN_ID`、`WORKFLOW_ID`和`TASK_ID`|
+|非交互式批量执行|支持|使用`opencode run --auto --format json`|
+|固定解码参数|OpenCode命令行不直接提供|在模型服务层固定；主要策略比较使用固定轨迹回放|
+|工具事件输出|支持|OpenCode JSON事件用于交叉验证，工具自身负责纳秒级计时|
+|MCP与自定义工具|支持|首轮不使用，保留为后续结构化接入方案|
+
+因此，首轮实验确定采用Shell适配路线。该路线不修改OpenCode内核，也不依赖MCP注册。
+
+### 4.2 标识与会话规则
+
+三个实验标识由批处理脚本生成并通过环境变量传递，以环境变量为唯一事实来源：
+
+```text
+RUN_ID       一次完整实验运行
+WORKFLOW_ID  一个独立OpenCode工作流
+TASK_ID      工作负载清单中的任务
+```
+
+`--title`只作为人工检查标签，不替代上述标识。OpenCode产生的真实`session_id`从`--format json`事件流或`opencode export`结果中提取，并单独保存映射：
+
+```json
+{
+  "run_id": "run-001",
+  "workflow_id": "workflow-001",
+  "task_id": "task-001",
+  "opencode_session_id": "..."
+}
+```
+
+一个任务能够在单次`opencode run`中自主完成多次工具调用，因此首轮将“一个任务”映射为“一次OpenCode会话”。只有当任务确实需要由外部程序分多次追加消息时，才在首次调用后提取`session_id`，并使用`-s/--session`继续同一会话。
+
+批处理命令草案如下：
+
+```bash
+RUN_ID="run-001" \
+WORKFLOW_ID="workflow-001" \
+TASK_ID="task-001" \
+opencode run --auto --format json \
+  --title "workflow-001-task-001" \
+  "$TASK_PROMPT" \
+  > artifacts/traces/opencode/run-001/task-001.events.jsonl
+```
+
+批处理程序还需在OpenCode进程外记录任务开始时间、结束时间、退出码和超时状态。提示词中可以说明工具使用规则，但不让模型自行生成或修改实验标识。
+
+### 4.3 解码随机性的处理
+
+OpenCode 1.18.12命令行不直接提供`temperature`参数。若模型服务由实验独占，可以在服务层固定`temperature=0`和其他采样参数；若无法修改服务配置，则采用以下方法控制影响：
+
+1. 真实OpenCode执行只用于采集自然工具调用和页面访问轨迹；
+2. 缓存策略的主要比较固定首次采集的页面访问顺序、工具时长、任务到达和并发关系；
+3. 真实端到端复核报告任务成功率、工具序列差异和重复实验离散程度；
+4. 不把不同OpenCode运行之间的单次JCT差异直接归因于缓存策略。
+
 ## 5. 待实现的最小适配接口
 
 ### 5.1 常驻视觉语言模型服务
@@ -274,6 +336,15 @@ JCT
 - 任务成功率和答案证据一致性。
 
 该步骤预计运行1至3小时。
+
+每个任务完成后保存两类原始记录：
+
+```text
+artifacts/traces/opencode/<run_id>/<task_id>.events.jsonl
+artifacts/traces/opencode/<run_id>/<task_id>.session.json
+```
+
+第一类是`opencode run --format json`输出的事件流；第二类由`opencode export <session_id>`产生。两者仅用于追溯OpenCode决策和交叉验证工具事件，真实性能计时仍以`doc_tool.py`、Qwen3-VL服务和外层任务运行器记录为准。
 
 ### 9.3 固定轨迹缓存对比
 
