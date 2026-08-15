@@ -110,6 +110,9 @@ git clone --recurse-submodules \
 公司环境无法安装 OpenClaw 时，使用纯 Python 工具 Agent 路线：
 [docs/PYTHON_AGENT_REPRODUCTION.md](docs/PYTHON_AGENT_REPRODUCTION.md)。
 
+基于OpenCode的多轮文档图像分析智能体接入、真实轨迹采集和共享视觉状态实验见：
+[docs/OPENCODE_DOCUMENT_AGENT_EXPERIMENT.md](docs/OPENCODE_DOCUMENT_AGENT_EXPERIMENT.md)。
+
 ## 当前边界
 
 当前模拟器只执行已经切分成时间片的可抢占维护任务。真实 ContextPilot 接入尚未实现；必须先完成 motivation 实验，再根据结果实现局部重建和原子快照提交。

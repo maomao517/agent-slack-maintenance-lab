@@ -4,7 +4,7 @@
 
 本文档描述下一步实验的接入方式、最小工作负载、日志口径、对比策略和停止条件，用于补充真实智能体工作流证据。
 
-前期实验已经完成Qwen3-VL性能剖析、视觉状态保存与恢复以及缓存策略验证；当前Git仓库还提供缓存策略回放和OpenAI兼容请求追踪等基础。本文提到的`doc_vlm_server.py`和`doc_tool.py`是下一步需要实现的OpenCode适配接口，**当前不是可直接执行的现有脚本**。
+前期实验已经完成Qwen3-VL性能剖析、视觉状态保存与恢复以及缓存策略验证。当前Git仓库已经实现OpenCode适配框架，包括常驻视觉语言模型服务、Shell工具客户端、批量任务运行器、结果汇总脚本和模拟后端测试。模拟后端已经完成端到端验证；真实Qwen3-VL后端仍需在目标GPU环境中完成接口与输出一致性验收后，才能用于正式实验。
 
 ## 2. 实验目的
 
@@ -129,11 +129,11 @@ OpenCode 1.18.12命令行不直接提供`temperature`参数。若模型服务由
 3. 真实端到端复核报告任务成功率、工具序列差异和重复实验离散程度；
 4. 不把不同OpenCode运行之间的单次JCT差异直接归因于缓存策略。
 
-## 5. 待实现的最小适配接口
+## 5. 已实现的适配接口
 
 ### 5.1 常驻视觉语言模型服务
 
-建议新增：
+已实现：
 
 ```text
 scripts/doc_vlm_server.py
@@ -162,12 +162,16 @@ GET  /metrics
 
 ```bash
 source envs/control/bin/activate
+export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
 
 CUDA_VISIBLE_DEVICES=0 python scripts/doc_vlm_server.py \
+  --backend transformers \
   --model-dir "$MODEL_DIR" \
+  --data-root "$(pwd)" \
   --host 127.0.0.1 \
   --port 30200 \
   --cache-policy no_cache \
+  --cache-capacity-mb 1024 \
   --trace-output artifacts/traces/opencode-vlm.jsonl
 ```
 
@@ -175,7 +179,7 @@ CUDA_VISIBLE_DEVICES=0 python scripts/doc_vlm_server.py \
 
 ### 5.2 OpenCode工具客户端
 
-建议新增：
+已实现：
 
 ```text
 scripts/doc_tool.py
@@ -193,8 +197,14 @@ submit     校验最终答案是否包含证据页
 调用示例：
 
 ```bash
-python scripts/doc_tool.py analyze \
+RUN_ID="smoke" WORKFLOW_ID="workflow-001" TASK_ID="task-001" \
+python scripts/doc_tool.py \
+  --require-context \
+  --trace-output artifacts/traces/opencode-tools.jsonl \
+  analyze \
   --server http://127.0.0.1:30200 \
+  --turn-id 0 \
+  --document-id report-01 \
   --page-id M1 \
   --version v1 \
   --image data/public_docs/resized/medium/M1.png \
@@ -202,6 +212,64 @@ python scripts/doc_tool.py analyze \
 ```
 
 客户端从环境变量读取`RUN_ID`、`WORKFLOW_ID`和`TASK_ID`，并将其传给服务端。工具标准输出只返回结构化JSON，诊断信息写入标准错误或独立日志，避免干扰OpenCode解析。
+
+客户端显式禁用系统代理并直连视觉服务，避免本地回环请求被代理变量错误转发。
+
+### 5.3 OpenCode批量任务运行器
+
+已实现：
+
+```text
+scripts/run_opencode_document_tasks.py
+```
+
+任务文件使用JSONL格式，每行至少包含`task_id`和`prompt`，可选`workflow_id`和`title`。仓库中的`configs/opencode_document_tasks.example.jsonl`只展示字段格式，不是正式实验任务集。
+
+运行命令：
+
+```bash
+python scripts/run_opencode_document_tasks.py \
+  --tasks configs/opencode_document_tasks.jsonl \
+  --manifest data/public_docs/manifest.csv \
+  --workspace "$(pwd)" \
+  --instructions configs/opencode_document_agent_instructions.txt \
+  --output-dir artifacts/traces/opencode \
+  --run-id opencode-no-cache-c1-r1 \
+  --server http://127.0.0.1:30200 \
+  --concurrency 1 \
+  --repeats 1 \
+  --export-sessions
+```
+
+运行器使用`opencode run --auto --format json`执行任务，自动注入实验标识并保存原始事件、标准错误、会话导出和任务汇总。默认在每次重复前调用`POST /cache/clear`，保证重复实验相互独立；只有专门测量预热缓存时才使用`--preserve-cache-between-repeats`。
+
+页面清单至少包含以下字段：
+
+```text
+document_id,page_id,document_version,title,keywords,image
+```
+
+其中`image`填写相对于仓库根目录的图像路径。运行器将清单绝对路径写入`DOC_PAGE_MANIFEST`，OpenCode通过`search`工具检索清单，再自主选择需要分析的页面。
+
+### 5.4 结果汇总
+
+已实现：
+
+```text
+scripts/summarize_opencode_document_results.py
+```
+
+汇总命令：
+
+```bash
+python scripts/summarize_opencode_document_results.py \
+  --run-dir artifacts/traces/opencode/opencode-no-cache-c1-r1 \
+  --visual-events artifacts/traces/opencode-vlm.jsonl \
+  --run-id opencode-no-cache-c1-r1 \
+  --output artifacts/results/opencode-no-cache-c1-r1-summary.json
+```
+
+脚本输出任务成功数、平均与中位数JCT、P95 JCT、工具调用时间、视觉访问次数、视觉编码次数、缓存命中率以及工作流内和跨工作流复用次数。
 
 ## 6. OpenCode任务约束
 
@@ -322,6 +390,34 @@ JCT
 - 服务异常时OpenCode能够收到明确错误，而不是静默重试。
 
 预计耗时约1小时，不形成论文结论。
+
+在加载真实模型前，可以先用模拟后端检查OpenCode、Shell工具和日志协议：
+
+```bash
+python scripts/doc_vlm_server.py \
+  --backend mock \
+  --data-root "$(pwd)" \
+  --cache-policy shared_cpu \
+  --cache-capacity-mb 1 \
+  --port 30200 \
+  --trace-output artifacts/traces/opencode-vlm-mock.jsonl
+```
+
+模拟后端只验证协议和缓存语义，不产生真实模型性能结论。
+
+### 9.1.1 真实Qwen3-VL验收门槛
+
+正式运行OpenCode任务前，必须使用同一页面和同一问题连续发送两次请求，并确认：
+
+1. 第一次返回`cache_hit=false`、`encoder_called=true`；
+2. 第二次使用不同`WORKFLOW_ID`，返回`cache_hit=true`、`encoder_called=false`；
+3. 中等分辨率完整状态大小约为已核验的9.375MB，而不是2.3438MB；
+4. 两次生成答案一致，或在单独正确性脚本中确认首步logits最大绝对误差为0且贪心输出一致；
+5. 第二次请求的视觉模块调用次数为0；
+6. `/metrics`中的`request_count=2`、`cache_hits=1`、`encoder_calls=1`；
+7. JSONL中的文档版本、页面哈希、工作流标识和时间字段完整。
+
+若服务报出`get_image_features`接口不兼容，不得绕过检查继续实验，应将目标机器上已经验证的注入实现适配到`TransformersQwen3VLBackend`。
 
 ### 9.2 真实智能体轨迹采集
 

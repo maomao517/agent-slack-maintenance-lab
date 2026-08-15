@@ -1,0 +1,1 @@
+{"task_id":"example-01","workflow_id":"example-01","title":"document-evidence-example-01","prompt":"请检索公开文档页面，找到与示例指标相关的证据，分析必要页面并返回带document_id、page_id和证据描述的结论。"}
