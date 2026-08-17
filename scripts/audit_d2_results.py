@@ -20,8 +20,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--expected-low-state-mb",
         type=float,
-        default=7.875,
-        help="Measured complete state size for the current low-resolution input.",
+        default=2.5,
+        help="Measured complete low-resolution state size for the resized D2 input.",
     )
     return parser.parse_args()
 

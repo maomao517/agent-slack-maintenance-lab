@@ -137,7 +137,7 @@ KV cache（Key-Value cache，键值缓存）大小约为94至288MB，但原始�
 
 ```text
 image_embeds：中等分辨率下约2.34MB
-image_embeds+deepstack：当前medium验证页面实测30.375MB
+image_embeds+deepstack：resize路径实测9.375MB；原图直入路径实测30.375MB
 ```
 
 当前润色稿不能直接认定`deepstack`不属于完整可复用状态。需要通过一次消融实验确认：命中路径是否只恢复`image_embeds`，还是实际恢复了`get_image_features`返回的`image_embeds+deepstack`完整结构。
@@ -145,8 +145,9 @@ image_embeds+deepstack：当前medium验证页面实测30.375MB
 正式使用的`reusable_encoder_state_mb`必须等于“能够在不重新调用视觉模块的情况下保持logits一致所需的全部张量大小”。在该口径确认前：
 
 - 2.34MB只能称为`image_embeds`核心张量大小；
-- 早期9.375MB来自另一组视觉序列长度估算，已经过期；
-- 当前medium验证页面的完整状态应使用实测30.375MB；
+- 9.375MB是图像先按`target_height`缩放后的实测完整状态；
+- 30.375MB是原图不经resize直接输入时的实测完整状态；
+- 两个数值不能脱离图像处理路径单独使用；
 - 不能使用2.34MB计算最终缓存容量，除非消融实验已经证明`deepstack`可以安全省略。
 
 ### 5.3 分层存储性能
@@ -194,7 +195,7 @@ CPU状态保存约需261.4ms，本地文件保存约需459.5ms。保存操作通
 
 15,593MB是按一次前向峰值计算的理论剩余空间，不是已经扣除并发执行、CUDA内存池、碎片和安全余量后的“安全空间”。因此，按其10%、25%和50%计算的容量只能作为理论估算。
 
-原有2.34MB和9.375MB容量推算均不能作为当前完整缓存对象的容量结论。当前medium验证页面的完整状态实测为30.375MB；正式容量分析应按每个实验输入的实际缓存张量统计，并同时报告视觉token数和`image_grid_thw`。
+2.34MB只代表resize路径下的基础视觉嵌入，9.375MB代表同一路径的完整状态；原图直入路径的medium完整状态为30.375MB。正式容量分析应按每个实验输入的实际缓存张量统计，并同时报告视觉token数、`image_grid_thw`和是否执行resize。
 
 ### 6.2 四类访问轨迹
 

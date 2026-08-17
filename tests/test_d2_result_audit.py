@@ -26,7 +26,7 @@ class D2ResultAuditTest(unittest.TestCase):
                     }
                 ],
             },
-            expected_low_state_mb=7.875,
+            expected_low_state_mb=2.5,
         )
         codes = {item["code"] for item in report["findings"]}
         self.assertFalse(report["report_ready"])
@@ -39,7 +39,7 @@ class D2ResultAuditTest(unittest.TestCase):
                 "summary": [
                     {
                         "answer_consistency": 1.0,
-                        "vision_state_mb": 7.875,
+                        "vision_state_mb": 2.5,
                         "cpu_to_gpu_transfer_ms": 12.0,
                         "duplicate_encoder_calls": 2.0,
                         "workflow_start_ns": 10,
@@ -48,7 +48,7 @@ class D2ResultAuditTest(unittest.TestCase):
                     }
                 ]
             },
-            expected_low_state_mb=7.875,
+            expected_low_state_mb=2.5,
         )
         self.assertTrue(report["report_ready"])
         self.assertEqual(report["findings"], [])
