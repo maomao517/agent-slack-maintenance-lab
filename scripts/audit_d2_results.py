@@ -20,8 +20,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--expected-low-state-mb",
         type=float,
-        default=2.5,
-        help="Expected complete low-resolution state size for Qwen3-VL.",
+        default=7.875,
+        help="Measured complete state size for the current low-resolution input.",
     )
     return parser.parse_args()
 
@@ -109,18 +109,21 @@ def build_audit(payload: Any, expected_low_state_mb: float) -> dict[str, Any]:
         )
 
     state_values = numeric_fields(payload, "vision_state_mb")
-    if state_values and any(
-        abs(value - expected_low_state_mb / 4) < 1e-6 for value in state_values
+    positive_state_values = [value for value in state_values if value > 0]
+    if positive_state_values and any(
+        value < expected_low_state_mb for value in positive_state_values
     ):
         findings.append(
             finding(
                 "P0",
                 "possible-image-embeds-only-state",
-                f"vision_state_mb includes {expected_low_state_mb / 4:g}MB; for "
-                f"Qwen3-VL this matches low-resolution image_embeds alone, while "
-                f"the validated complete state is {expected_low_state_mb:g}MB.",
+                f"vision_state_mb includes a positive value below the measured "
+                f"complete low-resolution state ({expected_low_state_mb:g}MB). "
+                f"The field may contain image_embeds only or use a mismatched "
+                f"input-size definition.",
                 "Inspect the D2 save/load/inject path and verify that all three "
-                "DeepStack tensors are saved and restored.",
+                "DeepStack tensors are saved and restored, then report tensor "
+                "shapes and image_grid_thw with the size value.",
             )
         )
 

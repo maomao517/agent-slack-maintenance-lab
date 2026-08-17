@@ -411,7 +411,7 @@ python scripts/doc_vlm_server.py \
 
 1. 第一次返回`cache_hit=false`、`encoder_called=true`；
 2. 第二次使用不同`WORKFLOW_ID`，返回`cache_hit=true`、`encoder_called=false`；
-3. 中等分辨率完整状态大小约为已核验的9.375MB，而不是2.3438MB；
+3. 当前medium验证页面的完整状态大小应为实测30.375MB；早期9.375MB估算不再作为验收口径；
 4. 两次生成答案一致，或在单独正确性脚本中确认首步logits最大绝对误差为0且贪心输出一致；
 5. 第二次请求的视觉模块调用次数为0；
 6. `/metrics`中的`request_count=2`、`cache_hits=1`、`encoder_calls=1`；
