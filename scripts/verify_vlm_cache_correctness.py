@@ -107,18 +107,18 @@ def find_visual_module(model: Any) -> tuple[str, Any] | None:
 @contextmanager
 def injected_features(backend: TransformersQwen3VLBackend, features: Any):
     """Temporarily bypass the visual encoder with a cached feature tuple."""
-    original = backend.feature_owner.get_image_features
+    original = backend.feature_injection_owner.get_image_features
     calls = {"injected_get_image_features_calls": 0}
 
     def inject(*_args: Any, **_kwargs: Any) -> Any:
         calls["injected_get_image_features_calls"] += 1
         return features
 
-    backend.feature_owner.get_image_features = inject
+    backend.feature_injection_owner.get_image_features = inject
     try:
         yield calls
     finally:
-        backend.feature_owner.get_image_features = original
+        backend.feature_injection_owner.get_image_features = original
 
 
 def synchronized_forward(backend: TransformersQwen3VLBackend, inputs: dict[str, Any]) -> Any:

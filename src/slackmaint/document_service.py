@@ -266,6 +266,7 @@ class TransformersQwen3VLBackend:
         self.model.eval()
         self.model.to(device)
         self.feature_owner = self._find_feature_owner()
+        self.feature_injection_owner = self._find_feature_injection_owner()
         config_names = (
             "config.json",
             "preprocessor_config.json",
@@ -296,6 +297,18 @@ class TransformersQwen3VLBackend:
         raise RuntimeError(
             "Model does not expose get_image_features; the installed Transformers "
             "model interface is incompatible with the validated Qwen3-VL path."
+        )
+
+    def _find_feature_injection_owner(self):
+        """Find the object whose get_image_features is called by model forward."""
+        candidates = [getattr(self.model, "model", None), self.feature_owner]
+        for candidate in candidates:
+            if candidate is not None and callable(
+                getattr(candidate, "get_image_features", None)
+            ):
+                return candidate
+        raise RuntimeError(
+            "Model forward does not expose an injectable get_image_features owner."
         )
 
     def _prepare(self, image_path: Path, prompt: str) -> dict[str, Any]:
@@ -358,12 +371,12 @@ class TransformersQwen3VLBackend:
         if inputs is None:
             inputs = self._prepare(image_path, prompt)
         features = state["features"]
-        original = self.feature_owner.get_image_features
+        original = self.feature_injection_owner.get_image_features
 
         def inject_features(*_args, **_kwargs):
             return features
 
-        self.feature_owner.get_image_features = inject_features
+        self.feature_injection_owner.get_image_features = inject_features
         self._sync()
         started = time.perf_counter_ns()
         try:
@@ -376,7 +389,7 @@ class TransformersQwen3VLBackend:
                 )
             self._sync()
         finally:
-            self.feature_owner.get_image_features = original
+            self.feature_injection_owner.get_image_features = original
         elapsed_ms = (time.perf_counter_ns() - started) / 1_000_000
         prompt_length = int(inputs["input_ids"].shape[-1])
         generated_only = generated[:, prompt_length:]

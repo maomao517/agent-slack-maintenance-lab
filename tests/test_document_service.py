@@ -6,6 +6,7 @@ from slackmaint.document_service import (
     DocumentAnalysisService,
     JsonlEventWriter,
     MockDocumentBackend,
+    TransformersQwen3VLBackend,
 )
 
 
@@ -24,6 +25,27 @@ def request(workflow_id: str = "w1", version: str = "v1"):
 
 
 class DocumentServiceTest(unittest.TestCase):
+    def test_feature_injection_owner_prefers_inner_forward_model(self) -> None:
+        class InnerModel:
+            def get_image_features(self):
+                return None
+
+        class OuterModel:
+            def __init__(self):
+                self.model = InnerModel()
+
+            def get_image_features(self):
+                return self.model.get_image_features()
+
+        backend = TransformersQwen3VLBackend.__new__(TransformersQwen3VLBackend)
+        backend.model = OuterModel()
+        backend.feature_owner = backend.model
+
+        self.assertIs(
+            backend._find_feature_injection_owner(),
+            backend.model.model,
+        )
+
     def test_shared_cache_reuses_state_across_workflows(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             image = Path(temporary) / "page.png"
